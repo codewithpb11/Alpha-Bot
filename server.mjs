@@ -252,7 +252,7 @@ class UciEngine {
   async #analyse(fen, requestedDepth, requestedMultiPv, chess960) {
     if (!isCompleteFen(fen)) throw new EngineError("This does not look like a complete FEN position.");
     await this.start();
-    const depth = clampInteger(requestedDepth, 18, 1, MAX_DEPTH);
+    const depth = clampInteger(requestedDepth, 20, 1, MAX_DEPTH);
     const multiPv = clampInteger(requestedMultiPv, 3, 1, MAX_MULTI_PV);
     try {
       this.#send(`setoption name MultiPV value ${multiPv}`);

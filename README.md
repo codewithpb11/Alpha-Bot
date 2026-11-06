@@ -56,14 +56,14 @@ The final chat verdict combines full-library statistics with the engine audit: o
 
 ## Every-move game review
 
-Open any loaded game, then use **Analyse every move** in the **Alpha Game Review** card (or ask “analyse this game” in chat). Alpha examines each played half-move at local depth 10 and shows:
+Open any loaded game, then use **Analyse every move** in the **Alpha Game Review** card (or ask “analyse this game” in chat). Alpha examines each played half-move at local depth 20 and shows:
 
 - overall, opening, middlegame, and endgame accuracy estimates for both players;
 - counts for Brilliant candidates, Great, Book, Best, Excellent, Good, Inaccuracy, Mistake, Missed win, and Blunder moves;
 - a clearly labelled single-game performance estimate for each player.
 - the five largest inaccurate-or-worse turning points, with the played SAN move and Alpha's preferred move.
 
-This is free and runs through the configured local engine. The accuracy, move labels, and performance figures are Alpha’s reproducible estimates from engine loss at that depth; they are not Chess.com’s proprietary scores and the performance number is not an official Elo rating. You can stop a review safely; its result will be marked as partial.
+This is free and runs through the configured local engine. The accuracy, move labels, and performance figures are Alpha’s reproducible estimates from engine loss at that depth; they are not Chess.com’s proprietary scores and the performance number is not an official Elo rating. Depth 20 is substantially more demanding than the earlier default, especially for a full-database scan on a phone, so keep the app open and use **Stop** safely if you need to pause a review.
 
 ## Chat behaviour
 

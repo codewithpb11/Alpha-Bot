@@ -93,12 +93,16 @@ const OPENING_POSITIONS = [
 ];
 const MAX_ARROWS = 12;
 const MAX_REPORT_GAMES = 4;
-const REPORT_DEPTH = 10;
+// Depth 20 is the default accuracy target for Alpha's on-device reports.
+// It is deliberately shared by position, selected-game, and library analysis
+// so an estimate is not quietly based on a shallower engine pass.
+const POSITION_ANALYSIS_DEPTH = 20;
+const REPORT_DEPTH = 20;
 const REPORT_SAMPLES_PER_GAME = 7;
-const GAME_REVIEW_DEPTH = 10;
+const GAME_REVIEW_DEPTH = 20;
 const GAME_REVIEW_MULTI_PV = 3;
 const GAME_LIST_PAGE_SIZE = 100;
-const LIBRARY_AUDIT_DEPTH = 7;
+const LIBRARY_AUDIT_DEPTH = 20;
 const LIBRARY_PROFILE_YIELD_EVERY = 12;
 const ON_DEVICE_ENGINE = isStandaloneAlpha();
 
@@ -1115,7 +1119,7 @@ async function analysePosition() {
   element("analyse-position").textContent = "Analysing…";
   document.querySelector(".send-button").disabled = true;
   try {
-    const payload = await analyseFenAtDepth(game.fen(), 18, chess960Mode, multiPv);
+    const payload = await analyseFenAtDepth(game.fen(), POSITION_ANALYSIS_DEPTH, chess960Mode, multiPv);
     analysis = payload;
     analysisFen = game.fen();
     renderBoard();
@@ -1289,7 +1293,7 @@ function renderSelectedGameReview() {
   const summary = element("selected-game-analysis-summary");
   if (!selectedGameReview) {
     if (!isAnalyzingSelectedGame) {
-      element("selected-game-analysis-progress").textContent = "Alpha uses local depth-10 analysis. Accuracy and performance are transparent estimates, not Chess.com scores or ratings.";
+      element("selected-game-analysis-progress").textContent = "Alpha uses local depth-20 analysis. Accuracy and performance are transparent estimates, not Chess.com scores or ratings.";
     }
     summary.hidden = true;
     summary.replaceChildren();

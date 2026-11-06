@@ -9,7 +9,7 @@ async function loadGameReviewFunctions() {
   const end = source.indexOf("\nfunction renderSelectedGameReview()", start);
   assert.ok(start >= 0 && end > start, "game-review functions should be present in app.js");
   const context = {
-    GAME_REVIEW_DEPTH: 10,
+    GAME_REVIEW_DEPTH: 20,
     forcingMove: (move) => Boolean(move.givesCheck),
     scoreForWhite: (result) => result.score,
     gameResultForPlayer: () => "draw",
