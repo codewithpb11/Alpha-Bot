@@ -26,7 +26,7 @@ The local `engine/` folder and `engine_config.json` are intentionally excluded f
 
 ## Android APK
 
-The public repository includes an Android wrapper for Alpha. It packages the interface and a single-threaded Stockfish 19 WebAssembly engine inside the APK, so board analysis works on the device without the Windows engine executable or a local server. Version 1.3.0 targets depth 20 and displays the achieved/target engine depth (for example, `Depth 20/20`); it refuses to label a shallower result as final. On Android, Alpha defaults to one candidate line for its fastest depth-20 search; choose two to four lines when comparison matters more than speed. Full-game reviews reuse engine results for positions already checked instead of calculating the same position twice. The selected-game panel also includes an optional Quick preview (≤2 min): it evaluates up to ten important decisions with a time limit, displays the depth actually reached, and does not replace the full every-move review.
+The public repository includes an Android wrapper for Alpha. It packages the interface and a single-threaded Stockfish 19 WebAssembly engine inside the APK, so board analysis works on the device without the Windows engine executable or a local server. Version 1.4.0 targets depth 20 and displays the achieved/target engine depth (for example, `Depth 20/20`). On Android, Alpha defaults to one candidate line for its fastest depth-20 search; choose two to four lines when comparison matters more than speed. Selected-game review checks every played move once, reuses the resulting position for the following move, and divides a three-minute budget across the entire game.
 
 Every push to `main` runs **Build Android APK** in GitHub Actions. Open that workflow, select the latest successful run, and download the `Alpha-debug-apk` artifact. Transfer the resulting `app-debug.apk` to an Android phone and install it after allowing installs from the file manager/browser you used. This debug APK is installable for personal testing; publishing to Google Play needs a separately signed release build.
 
@@ -56,14 +56,14 @@ The final chat verdict combines full-library statistics with the engine audit: o
 
 ## Every-move game review
 
-Open any loaded game, then use **Analyse every move** in the **Alpha Game Review** card (or ask “analyse this game” in chat). Alpha examines each played half-move at local depth 20 and shows:
+Open any loaded game, then use **Review every move (≤3 min)** in the **Alpha Game Review** card (or ask “analyse this game” in chat). Alpha examines every played move, sharing one three-minute budget across the complete game and targeting depth 20 for each position. It shows:
 
 - overall, opening, middlegame, and endgame accuracy estimates for both players;
-- counts for Brilliant candidates, Great, Book, Best, Excellent, Good, Inaccuracy, Mistake, Missed win, and Blunder moves;
-- a clearly labelled single-game performance estimate for each player.
+- counts for Brilliant, Great, Book, Best, Excellent, Good, Inaccuracy, Mistake, Miss, and Blunder moves;
+- a game rating for each player, based on the PGN rating when it is available.
 - the five largest inaccurate-or-worse turning points, with the played SAN move and Alpha's preferred move.
 
-This is free and runs through the configured local engine. The accuracy, move labels, and performance figures are Alpha’s reproducible estimates from engine loss at that depth; they are not Chess.com’s proprietary scores and the performance number is not an official Elo rating. Depth 20 is substantially more demanding than the earlier default, especially for a full-database scan on a phone, so keep the app open and use **Stop** safely if you need to pause a review.
+This is free and runs through the configured local engine. Consecutive positions are reused instead of being searched twice, so the review can cover the full game within its shared time budget. Keep the app open until the review completes.
 
 ## Chat behaviour
 

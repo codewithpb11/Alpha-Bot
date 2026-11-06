@@ -13,6 +13,7 @@ async function loadGameReviewFunctions() {
     forcingMove: (move) => Boolean(move.givesCheck),
     scoreForWhite: (result) => result.score,
     gameResultForPlayer: () => "draw",
+    OPENING_POSITIONS: [{ moves: ["e2e4", "c7c6", "d2d4", "d7d5"] }],
   };
   vm.createContext(context);
   new vm.Script(`${source.slice(start, end)}\nglobalThis.review = { moveAccuracyEstimate, classifySelectedGameMove, labelDisplayName };`).runInContext(context);
@@ -38,17 +39,19 @@ function reviewedMove(overrides = {}) {
   };
 }
 
-test("uses a reproducible local accuracy curve instead of platform accuracy", async () => {
+test("uses a calibrated accuracy curve that does not punish small losses like blunders", async () => {
   const { moveAccuracyEstimate } = await loadGameReviewFunctions();
   assert.equal(moveAccuracyEstimate(0), 100);
-  assert.ok(moveAccuracyEstimate(190) > 36 && moveAccuracyEstimate(190) < 37);
+  assert.ok(moveAccuracyEstimate(50) > 90);
+  assert.ok(moveAccuracyEstimate(190) > 68 && moveAccuracyEstimate(190) < 70);
   assert.ok(moveAccuracyEstimate(10_000) < 0.0001);
 });
 
 test("labels book, critical errors, and verified sacrifice candidates", async () => {
   const { classifySelectedGameMove, labelDisplayName } = await loadGameReviewFunctions();
-  assert.equal(classifySelectedGameMove(reviewedMove({ phase: "opening", move: { color: "w", ply: 8, to: "e4", piece: "p", captured: null } })), "book");
-  assert.equal(classifySelectedGameMove(reviewedMove({ loss: 130 })), "mistake");
+  const bookRecord = { history: [{ uci: "e2e4" }, { uci: "c7c6" }, { uci: "d2d4" }, { uci: "d7d5" }] };
+  assert.equal(classifySelectedGameMove(reviewedMove({ phase: "opening", move: { color: "b", ply: 4, uci: "d7d5", to: "d5", piece: "p", captured: null } }), null, null, bookRecord), "book");
+  assert.equal(classifySelectedGameMove(reviewedMove({ loss: 150 })), "mistake");
   assert.equal(classifySelectedGameMove(reviewedMove({ loss: 300 })), "blunder");
   const sacrifice = reviewedMove({
     beforePlayerScore: 30,
@@ -58,6 +61,6 @@ test("labels book, critical errors, and verified sacrifice candidates", async ()
   const recapture = reviewedMove({
     move: { color: "b", ply: 21, to: "e5", piece: "p", captured: "n" },
   });
-  assert.equal(classifySelectedGameMove(sacrifice, recapture), "brilliant");
-  assert.equal(labelDisplayName("brilliant"), "Brilliant candidates");
+  assert.equal(classifySelectedGameMove(sacrifice, null, recapture, {}), "brilliant");
+  assert.equal(labelDisplayName("brilliant"), "Brilliant");
 });

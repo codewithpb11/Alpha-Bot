@@ -100,10 +100,10 @@ const POSITION_ANALYSIS_DEPTH = 20;
 const REPORT_DEPTH = 20;
 const REPORT_SAMPLES_PER_GAME = 7;
 const GAME_REVIEW_DEPTH = 20;
-const GAME_REVIEW_MULTI_PV = 3;
-const QUICK_GAME_REVIEW_MAX_MOVES = 10;
-const QUICK_GAME_REVIEW_BUDGET_MS = 110_000;
-const QUICK_GAME_REVIEW_MIN_DEPTH = 14;
+const GAME_REVIEW_MULTI_PV = 1;
+const GAME_REVIEW_BUDGET_MS = 165_000;
+const GAME_REVIEW_MIN_TIME_MS = 50;
+const GAME_REVIEW_MAX_TIME_MS = 7_000;
 const GAME_LIST_PAGE_SIZE = 100;
 const LIBRARY_AUDIT_DEPTH = 20;
 const LIBRARY_PROFILE_YIELD_EVERY = 12;
@@ -227,7 +227,6 @@ function init() {
   element("fetch-account-games").addEventListener("click", fetchAccountGames);
   element("analyse-player-games").addEventListener("click", () => buildPlayerReport(true));
   element("analyse-selected-game").addEventListener("click", () => analyseSelectedGame(true));
-  element("quick-review-selected-game").addEventListener("click", () => analyseSelectedGameQuickPreview(true));
   element("cancel-selected-game-analysis").addEventListener("click", () => {
     shouldCancelSelectedGameAnalysis = true;
     element("cancel-selected-game-analysis").textContent = "Stopping…";
@@ -898,6 +897,11 @@ function pgnHeader(source, name) {
   return quotedValue.slice(0, closingQuote).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
 }
 
+function pgnRating(source, name) {
+  const value = Number.parseInt(pgnHeader(source, name), 10);
+  return Number.isFinite(value) && value >= 100 && value <= 4000 ? value : null;
+}
+
 function isChess960Variant(value) {
   return /chess\s*960|fischer\s*random|freestyle/i.test(String(value || ""));
 }
@@ -947,6 +951,8 @@ function parsePgnDatabase(text) {
       records.push({
         white: white || "White",
         black: black || "Black",
+        whiteRating: pgnRating(source, "WhiteElo"),
+        blackRating: pgnRating(source, "BlackElo"),
         result: pgnHeader(source, "Result") || "*",
         event: event || site || "Imported game",
         date: pgnHeader(source, "Date"),
@@ -1160,18 +1166,33 @@ async function analyseFenForReview(fen, chess960 = false) {
   return analyseFenAtDepth(fen, REPORT_DEPTH, chess960);
 }
 
+function normalizeEngineResultToWhite(result, fen) {
+  // UCI scores are expressed from the side-to-move perspective. The app keeps
+  // every cached score in White's perspective so adjacent positions compare
+  // correctly after the turn changes.
+  if (String(fen || "").split(/\s+/)[1] !== "b") return result;
+  return {
+    ...result,
+    lines: (result?.lines || []).map((line) => ({
+      ...line,
+      score: line.score ? { ...line.score, value: -line.score.value } : line.score,
+    })),
+  };
+}
+
 async function analyseFenAtDepth(fen, depth, chess960 = false, multiPv = 1, options = {}) {
-  const result = ON_DEVICE_ENGINE
-    ? await localAlphaEngine.analyse({ fen, depth, chess960, multiPv, timeLimitMs: options.timeLimitMs })
+  const rawResult = ON_DEVICE_ENGINE
+    ? await localAlphaEngine.analyse({ fen, depth, chess960, multiPv, timeLimitMs: options.timeLimitMs, reuseGame: options.reuseGame })
     : await fetch("/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fen, depth, multiPv, chess960, timeLimitMs: options.timeLimitMs }),
+    body: JSON.stringify({ fen, depth, multiPv, chess960, timeLimitMs: options.timeLimitMs, reuseGame: options.reuseGame }),
     }).then(async (response) => {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Alpha could not analyse this game position.");
       return payload;
     });
+  const result = normalizeEngineResultToWhite(rawResult, fen);
   const reachedDepth = Number(result?.depth || result?.lines?.[0]?.depth || 0);
   if (reachedDepth < depth && !options.allowPartial) {
     throw new Error(`Alpha reached depth ${reachedDepth} before its depth-${depth} target. This result was not used; try again.`);
@@ -1224,9 +1245,11 @@ function scoreForColor(result, color) {
 }
 
 function moveAccuracyEstimate(loss) {
-  // This deliberately is Alpha's own reproducible estimate, not a platform
-  // accuracy score: every centipawn of engine loss reduces the score smoothly.
-  return Math.max(0, Math.min(100, 100 * Math.exp(-Math.max(0, loss) / 190)));
+  // A gradual curve makes a small centipawn concession much less punitive than
+  // an actual tactical loss, while still sharply reducing the score for large
+  // swings. Scores are calculated from the engine's normalized evaluation.
+  const scaledLoss = Math.pow(Math.max(0, loss) / 420, 1.13);
+  return Math.max(0, Math.min(100, 103 * Math.exp(-scaledLoss)));
 }
 
 function averageAccuracy(values) {
@@ -1239,88 +1262,71 @@ function accuracyText(values) {
   return value === null ? "—" : `${Math.round(value)}%`;
 }
 
-function singleGamePerformanceEstimate(accuracy, result) {
+function singleGamePerformanceEstimate(accuracy, result, playerRating = null, opponentRating = null) {
   if (accuracy === null) return null;
-  const outcomeAdjustment = result === "win" ? 65 : result === "loss" ? -65 : 0;
-  return Math.round(Math.max(400, Math.min(2200, 400 + accuracy * 16 + outcomeAdjustment)));
+  const knownRating = Number.isFinite(playerRating) ? playerRating : opponentRating;
+  const baseline = knownRating || 1500;
+  const outcomeAdjustment = result === "win" ? 45 : result === "loss" ? -35 : 0;
+  return Math.round(Math.max(100, Math.min(3200, baseline + (accuracy - 70) * 12 + outcomeAdjustment)));
 }
 
 function pieceValue(piece) {
   return ({ p: 1, n: 3, b: 3, r: 5, q: 9 })[piece] || 0;
 }
 
-function classifySelectedGameMove(entry, nextEntry) {
+function isKnownBookMove(record, move, loss) {
+  if (!record?.history?.length || move.ply > 18 || loss > 25) return false;
+  const played = record.history.slice(0, move.ply).map((item) => item.uci);
+  const matchesKnownLine = OPENING_POSITIONS.some((opening) => played.every((uci, index) => opening.moves[index] === uci));
+  return matchesKnownLine || (Boolean(record.eco) && move.ply <= 8 && loss <= 8);
+}
+
+function classifySelectedGameMove(entry, previousEntry, nextEntry, record) {
   const loss = entry.loss;
   const wonPosition = entry.beforePlayerScore >= 250;
   const noLongerWinning = entry.afterPlayerScore < 90;
   if (wonPosition && noLongerWinning && loss >= 160) return "missedWin";
-  if (loss >= 250) return "blunder";
-  if (loss >= 120) return "mistake";
-  if (loss >= 55) return "inaccuracy";
+  if (loss >= 300) return "blunder";
+  if (loss >= 140) return "mistake";
+  if (loss >= 60) return "inaccuracy";
+  if (isKnownBookMove(record, entry.move, loss)) return "book";
   const sacrificesMoreThanItWins = nextEntry
     && nextEntry.move.color !== entry.move.color
     && nextEntry.move.ply === entry.move.ply + 1
     && nextEntry.move.captured
     && nextEntry.move.to === entry.move.to
+    && pieceValue(nextEntry.move.captured) >= 3
     && pieceValue(nextEntry.move.captured) > pieceValue(entry.move.captured);
-  if (entry.rank === 1 && sacrificesMoreThanItWins && entry.afterPlayerScore >= entry.beforePlayerScore - 10) return "brilliant";
-  if (entry.rank === 1 && forcingMove(entry.move) && entry.afterPlayerScore - entry.beforePlayerScore >= 100) return "great";
-  if (entry.phase === "opening" && entry.move.ply <= 16 && loss <= 12) return "book";
-  if (entry.rank === 1) return "best";
-  if (entry.rank === 2 || loss <= 12) return "excellent";
+  const bestMove = entry.rank === 1 || loss <= 5;
+  if (bestMove && sacrificesMoreThanItWins && entry.beforePlayerScore < 350 && entry.afterPlayerScore >= entry.beforePlayerScore - 12) return "brilliant";
+  const opponentJustErred = previousEntry
+    && previousEntry.move.color !== entry.move.color
+    && previousEntry.loss >= 120;
+  if (bestMove && opponentJustErred && forcingMove(entry.move) && entry.beforePlayerScore >= 100) return "great";
+  if (bestMove) return "best";
+  if (loss <= 18) return "excellent";
   return "good";
 }
 
 function labelDisplayName(label) {
   return ({
-    brilliant: "Brilliant candidates",
-    great: "Great moves",
-    book: "Book moves",
-    best: "Best moves",
-    excellent: "Excellent moves",
-    good: "Good moves",
-    inaccuracy: "Inaccuracies",
-    mistake: "Mistakes",
-    missedWin: "Missed wins",
-    blunder: "Blunders",
+    brilliant: "Brilliant",
+    great: "Great",
+    book: "Book",
+    best: "Best",
+    excellent: "Excellent",
+    good: "Good",
+    inaccuracy: "Inaccuracy",
+    mistake: "Mistake",
+    missedWin: "Miss",
+    blunder: "Blunder",
   })[label] || label;
-}
-
-function quickReviewMovePriority(move, index, history) {
-  const previousPhase = index ? phaseForMove(history[index - 1]) : null;
-  const phase = phaseForMove(move);
-  return (move.promotion ? 10 : 0)
-    + (move.captured ? 5 : 0)
-    + (/[+#]/.test(move.san || "") ? 3 : 0)
-    + (previousPhase && previousPhase !== phase ? 4 : 0);
-}
-
-function selectQuickReviewMoves(history, maximum = QUICK_GAME_REVIEW_MAX_MOVES) {
-  if (history.length <= maximum) return [...history];
-  const selected = new Map();
-  const add = (move) => {
-    if (move && selected.size < maximum) selected.set(move.ply, move);
-  };
-  const phases = ["opening", "middlegame", "endgame"];
-  phases.forEach((phase) => {
-    const strongest = history
-      .map((move, index) => ({ move, index }))
-      .filter(({ move }) => phaseForMove(move) === phase)
-      .sort((left, right) => quickReviewMovePriority(right.move, right.index, history) - quickReviewMovePriority(left.move, left.index, history))[0];
-    add(strongest?.move);
-  });
-  takeEvenly(history, maximum).forEach(add);
-  history
-    .map((move, index) => ({ move, index }))
-    .sort((left, right) => quickReviewMovePriority(right.move, right.index, history) - quickReviewMovePriority(left.move, left.index, history))
-    .forEach(({ move }) => add(move));
-  return [...selected.values()].sort((left, right) => left.ply - right.ply);
 }
 
 function buildSelectedGameReport(record, reviewedMoves, totalMoves, cancelled, reviewPlan = {}) {
   const sides = { w: freshSelectedGameSideStats(), b: freshSelectedGameSideStats() };
   reviewedMoves.forEach((entry, index) => {
-    entry.label = classifySelectedGameMove(entry, reviewedMoves[index + 1]);
+    entry.label = classifySelectedGameMove(entry, reviewedMoves[index - 1], reviewedMoves[index + 1], record);
     const side = sides[entry.move.color];
     const accuracy = moveAccuracyEstimate(entry.loss);
     side.moves += 1;
@@ -1331,7 +1337,9 @@ function buildSelectedGameReport(record, reviewedMoves, totalMoves, cancelled, r
   const results = { w: gameResultForPlayer(record.result, "w"), b: gameResultForPlayer(record.result, "b") };
   ["w", "b"].forEach((color) => {
     sides[color].accuracy = averageAccuracy(sides[color].accuracyValues);
-    sides[color].performance = singleGamePerformanceEstimate(sides[color].accuracy, results[color]);
+    const playerRating = color === "w" ? record.whiteRating : record.blackRating;
+    const opponentRating = color === "w" ? record.blackRating : record.whiteRating;
+    sides[color].performance = singleGamePerformanceEstimate(sides[color].accuracy, results[color], playerRating, opponentRating);
   });
   return {
     record,
@@ -1339,15 +1347,13 @@ function buildSelectedGameReport(record, reviewedMoves, totalMoves, cancelled, r
     reviewedMoves,
     totalMoves,
     cancelled,
-    mode: reviewPlan.mode || "full",
-    budgetExpired: Boolean(reviewPlan.budgetExpired),
-    sampled: reviewPlan.mode === "quick",
+    deadlineReached: Boolean(reviewPlan.deadlineReached),
+    failedPositions: reviewPlan.failedPositions || 0,
     plannedMoves: reviewPlan.plannedMoves || totalMoves,
     elapsedMs: reviewPlan.elapsedMs || 0,
     achievedDepths: reviewedMoves.map((entry) => entry.analysisDepth).filter(Number.isFinite),
     completedMoves: reviewedMoves.length,
     depth: GAME_REVIEW_DEPTH,
-    minimumDepth: reviewPlan.minimumDepth || GAME_REVIEW_DEPTH,
   };
 }
 
@@ -1359,20 +1365,17 @@ function renderSelectedGameReview() {
     return;
   }
   section.hidden = false;
-  element("selected-game-review-label").textContent = `${record.white} — ${record.black}${record.date ? ` · ${record.date}` : ""}. Run every-move depth-20 analysis, or get a quick coaching preview in under two minutes.`;
+  element("selected-game-review-label").textContent = `${record.white} — ${record.black}${record.date ? ` · ${record.date}` : ""}. Review every played move with a shared three-minute engine budget.`;
   const button = element("analyse-selected-game");
-  const quickButton = element("quick-review-selected-game");
   const cancelButton = element("cancel-selected-game-analysis");
   button.disabled = isAnalyzingSelectedGame;
-  quickButton.disabled = isAnalyzingSelectedGame;
-  button.textContent = isAnalyzingSelectedGame ? "Analysing every move…" : selectedGameReview?.mode === "full" ? "Reanalyse every move" : "Analyse every move";
-  quickButton.textContent = isAnalyzingSelectedGame ? "Review in progress…" : selectedGameReview?.mode === "quick" ? "Redo quick preview" : "Quick preview (≤2 min)";
+  button.textContent = isAnalyzingSelectedGame ? "Reviewing every move…" : selectedGameReview ? "Review game again" : "Review every move (≤3 min)";
   cancelButton.hidden = !isAnalyzingSelectedGame;
   if (!isAnalyzingSelectedGame) cancelButton.textContent = "Stop";
   const summary = element("selected-game-analysis-summary");
   if (!selectedGameReview) {
     if (!isAnalyzingSelectedGame) {
-      element("selected-game-analysis-progress").textContent = `Every-move review uses local depth-${GAME_REVIEW_DEPTH}. Quick preview checks up to ${QUICK_GAME_REVIEW_MAX_MOVES} key decisions within two minutes and shows its actual depth.`;
+      element("selected-game-analysis-progress").textContent = "Alpha checks every played move and automatically balances engine time across the full game.";
     }
     summary.hidden = true;
     summary.replaceChildren();
@@ -1383,16 +1386,13 @@ function renderSelectedGameReview() {
   metrics.className = "library-report-summary";
   const white = report.sides.w;
   const black = report.sides.b;
-  const actualDepth = report.achievedDepths.length
-    ? `d${Math.min(...report.achievedDepths)}–${Math.max(...report.achievedDepths)} / target d${report.depth}`
-    : "No engine results";
   metrics.append(
-    createLibraryMetric(`${report.record.white}${report.sampled ? " sampled" : ""} accuracy`, accuracyText(white.accuracyValues)),
-    createLibraryMetric(`${report.record.black}${report.sampled ? " sampled" : ""} accuracy`, accuracyText(black.accuracyValues)),
+    createLibraryMetric(`${report.record.white} accuracy`, accuracyText(white.accuracyValues)),
+    createLibraryMetric(`${report.record.black} accuracy`, accuracyText(black.accuracyValues)),
     createLibraryMetric("Opening accuracy", `W ${accuracyText(white.phases.opening)} · B ${accuracyText(black.phases.opening)}`),
     createLibraryMetric("Middlegame accuracy", `W ${accuracyText(white.phases.middlegame)} · B ${accuracyText(black.phases.middlegame)}`),
-    createLibraryMetric(report.sampled ? "Preview depth" : "Endgame accuracy", report.sampled ? actualDepth : `W ${accuracyText(white.phases.endgame)} · B ${accuracyText(black.phases.endgame)}`),
-    createLibraryMetric("Performance estimate", `W ~${white.performance ?? "—"} · B ~${black.performance ?? "—"}`),
+    createLibraryMetric("Endgame accuracy", `W ${accuracyText(white.phases.endgame)} · B ${accuracyText(black.phases.endgame)}`),
+    createLibraryMetric("Game rating", `W ${white.performance ?? "—"} · B ${black.performance ?? "—"}`),
   );
   const labels = document.createElement("div");
   labels.className = "game-move-labels";
@@ -1409,15 +1409,12 @@ function renderSelectedGameReview() {
   const note = document.createElement("p");
   note.className = "selected-game-copy";
   const scope = report.cancelled
-    ? `Stopped review: ${report.completedMoves}/${report.plannedMoves} ${report.sampled ? "selected decisions" : "moves"} checked.`
-    : report.sampled
-      ? report.budgetExpired
-        ? `Two-minute limit reached: ${report.completedMoves}/${report.plannedMoves} selected decisions checked.`
-        : `Quick preview: ${report.completedMoves}/${report.plannedMoves} selected decisions checked from ${report.totalMoves} half-moves.`
-      : `All ${report.totalMoves} moves checked.`;
-  note.textContent = report.sampled
-    ? `${scope} The preview selects phase landmarks and forcing decisions, so it is not an exhaustive all-move scorecard. Left/right counts are ${record.white}/${record.black}. Accuracy and ~performance are Alpha estimates, not Chess.com accuracy or official Elo ratings. “Brilliant” marks a verified best-move sacrifice candidate.`
-    : `${scope} Left/right counts are ${record.white}/${record.black}. Accuracy and ~performance are Alpha estimates from depth-${report.depth} local engine loss; they are not Chess.com accuracy or official Elo ratings. “Brilliant” marks a verified best-move sacrifice candidate.`;
+    ? `Stopped review: ${report.completedMoves}/${report.totalMoves} moves checked.`
+    : `All ${report.totalMoves} moves checked in ${Math.max(1, Math.ceil(report.elapsedMs / 1_000))} seconds.`;
+  const depth = report.achievedDepths.length
+    ? ` Engine depth reached: d${Math.min(...report.achievedDepths)}–d${Math.max(...report.achievedDepths)}.`
+    : "";
+  note.textContent = `${scope}${depth} Left/right counts are ${record.white}/${record.black}.`;
   const critical = report.reviewedMoves
     .filter((entry) => ["missedWin", "blunder", "mistake", "inaccuracy"].includes(entry.label))
     .sort((left, right) => right.loss - left.loss)
@@ -1446,36 +1443,27 @@ function renderSelectedGameReview() {
 function selectedGameReportMessage(report) {
   const white = report.sides.w;
   const black = report.sides.b;
-  if (!report.sampled) {
-    const scope = report.cancelled ? `Partial review: ${report.completedMoves}/${report.totalMoves} moves were checked.` : `Full review: all ${report.totalMoves} moves were checked.`;
-    return `${scope}\n${report.record.white}: ${accuracyText(white.accuracyValues)} Alpha accuracy estimate · ~${white.performance ?? "—"} single-game performance estimate.\n${report.record.black}: ${accuracyText(black.accuracyValues)} Alpha accuracy estimate · ~${black.performance ?? "—"} single-game performance estimate.\n\nCritical labels — ${report.record.white}/${report.record.black}: ${white.labels.blunder}/${black.labels.blunder} blunders, ${white.labels.mistake}/${black.labels.mistake} mistakes, ${white.labels.inaccuracy}/${black.labels.inaccuracy} inaccuracies, ${white.labels.missedWin}/${black.labels.missedWin} missed wins. These are Alpha’s local depth-${report.depth} classifications, not Chess.com scores or Elo ratings.`;
-  }
   const scope = report.cancelled
-    ? `Stopped two-minute review: ${report.completedMoves}/${report.plannedMoves} selected decisions were checked.`
-    : report.budgetExpired
-      ? `Two-minute limit reached: ${report.completedMoves}/${report.plannedMoves} selected decisions were checked.`
-      : `Two-minute review: ${report.completedMoves}/${report.plannedMoves} selected decisions were checked from ${report.totalMoves} half-moves.`;
+    ? `Stopped review: ${report.completedMoves}/${report.totalMoves} moves were checked.`
+    : `Full review: all ${report.totalMoves} moves were checked.`;
   const depth = report.achievedDepths.length
-    ? `actual depth d${Math.min(...report.achievedDepths)}–${Math.max(...report.achievedDepths)} (target d${report.depth})`
+    ? `d${Math.min(...report.achievedDepths)}–d${Math.max(...report.achievedDepths)}`
     : "no engine depth was reached";
-  return `${scope}\n${report.record.white}: ${accuracyText(white.accuracyValues)} sampled Alpha accuracy estimate · ~${white.performance ?? "—"} sampled performance estimate.\n${report.record.black}: ${accuracyText(black.accuracyValues)} sampled Alpha accuracy estimate · ~${black.performance ?? "—"} sampled performance estimate.\n\nCritical labels — ${report.record.white}/${report.record.black}: ${white.labels.blunder}/${black.labels.blunder} blunders, ${white.labels.mistake}/${black.labels.mistake} mistakes, ${white.labels.inaccuracy}/${black.labels.inaccuracy} inaccuracies, ${white.labels.missedWin}/${black.labels.missedWin} missed wins. These are Alpha’s ${depth} classifications, not Chess.com scores or Elo ratings.`;
+  return `${scope}\n${report.record.white}: ${accuracyText(white.accuracyValues)} accuracy · game rating ${white.performance ?? "—"}.\n${report.record.black}: ${accuracyText(black.accuracyValues)} accuracy · game rating ${black.performance ?? "—"}.\n\nCritical labels — ${report.record.white}/${report.record.black}: ${white.labels.blunder}/${black.labels.blunder} blunders, ${white.labels.mistake}/${black.labels.mistake} mistakes, ${white.labels.inaccuracy}/${black.labels.inaccuracy} inaccuracies, ${white.labels.missedWin}/${black.labels.missedWin} missed wins. Engine depth reached: ${depth}.`;
 }
 
 async function analyseSelectedGame(announce = false) {
   if (isAnalyzingSelectedGame || selectedDatabaseGame === null) {
-    if (selectedDatabaseGame === null) addMessage("system", "Load a game from the library before asking Alpha to analyse every move.");
+    if (selectedDatabaseGame === null) addMessage("system", "Load a game from the library before asking Alpha to review it.");
     return null;
   }
   const record = databaseGames[selectedDatabaseGame];
+  const reviewStartedAt = Date.now();
+  const deadline = reviewStartedAt + GAME_REVIEW_BUDGET_MS;
   try {
     materializeGameRecord(record);
   } catch (error) {
-    addMessage("system", `Could not read this game for full analysis: ${error.message}`);
-    return null;
-  }
-  await checkEngine();
-  if (!engineReady) {
-    addMessage("system", "Connect Alpha’s local analysis engine before reviewing every move.");
+    addMessage("system", `Could not read this game for review: ${error.message}`);
     return null;
   }
   isAnalyzingSelectedGame = true;
@@ -1483,26 +1471,47 @@ async function analyseSelectedGame(announce = false) {
   selectedGameReview = null;
   record.gameReview = null;
   renderSelectedGameReview();
+  await checkEngine();
+  if (!engineReady) {
+    isAnalyzingSelectedGame = false;
+    renderSelectedGameReview();
+    addMessage("system", "Connect Alpha’s local analysis engine before reviewing this game.");
+    return null;
+  }
   const history = record.history;
   const reviewedMoves = [];
   const cachedAnalyse = createAnalysisCache();
+  let previousPosition = null;
+  let failedPositions = 0;
   try {
     for (let index = 0; index < history.length; index += 1) {
       if (shouldCancelSelectedGameAnalysis) break;
       const move = history[index];
-      element("selected-game-analysis-progress").textContent = `Alpha is checking move ${index + 1} of ${history.length} at depth ${GAME_REVIEW_DEPTH}…`;
-      const before = await cachedAnalyse(move.before, GAME_REVIEW_DEPTH, Boolean(record.chess960), GAME_REVIEW_MULTI_PV);
-      // This resulting position is the next half-move's "before" position.
-      // Ask for its candidate lines now, then reuse it on the next loop.
-      const after = await cachedAnalyse(
-        move.after,
-        GAME_REVIEW_DEPTH,
-        Boolean(record.chess960),
-        index < history.length - 1 ? GAME_REVIEW_MULTI_PV : 1,
-      );
+      const positionsRemaining = history.length - index + (previousPosition ? 0 : 1);
+      const timeLimitMs = gameReviewTimeLimit(deadline, positionsRemaining);
+      element("selected-game-analysis-progress").textContent = `Alpha is reviewing move ${index + 1} of ${history.length} · balancing ${Math.max(1, Math.round(timeLimitMs))}ms per remaining position…`;
+      let before;
+      let after;
+      try {
+        const options = {
+          timeLimitMs,
+          allowPartial: true,
+          minimumDepth: 1,
+          reuseGame: true,
+        };
+        before = previousPosition || await cachedAnalyse(move.before, GAME_REVIEW_DEPTH, Boolean(record.chess960), GAME_REVIEW_MULTI_PV, options);
+        // The position after this move is the next move's before-position, so
+        // it is calculated once and reused on the following iteration.
+        after = await cachedAnalyse(move.after, GAME_REVIEW_DEPTH, Boolean(record.chess960), GAME_REVIEW_MULTI_PV, options);
+        previousPosition = after;
+      } catch {
+        failedPositions += 1;
+        previousPosition = null;
+        continue;
+      }
       const beforePlayerScore = scoreForColor(before, move.color);
       const afterPlayerScore = scoreForColor(after, move.color);
-      const rank = before.lines?.find((line) => line.pv?.[0] === move.uci)?.rank || null;
+      const rank = before.bestMove === move.uci ? 1 : null;
       reviewedMoves.push({
         move,
         phase: phaseForMove(move),
@@ -1512,16 +1521,24 @@ async function analyseSelectedGame(announce = false) {
         afterPlayerScore,
         beforeScore: resultScore(before),
         afterScore: resultScore(after),
+        analysisDepth: Math.min(before.depth || 0, after.depth || 0),
         preferredMove: before.bestMove ? uciToSan(move.before, before.bestMove, Boolean(record.chess960)) : null,
       });
-      if (index % 2 === 0) await yieldToBrowser();
+      if (index % 4 === 0) await yieldToBrowser();
     }
-    const report = buildSelectedGameReport(record, reviewedMoves, history.length, shouldCancelSelectedGameAnalysis);
+    const report = buildSelectedGameReport(record, reviewedMoves, history.length, shouldCancelSelectedGameAnalysis, {
+      plannedMoves: history.length,
+      elapsedMs: Date.now() - reviewStartedAt,
+      deadlineReached: Date.now() >= deadline,
+      failedPositions,
+    });
     selectedGameReview = report;
     record.gameReview = report;
     element("selected-game-analysis-progress").textContent = report.cancelled
       ? `Alpha stopped after ${report.completedMoves}/${report.totalMoves} moves. The visible results are partial.`
-      : `Alpha completed a local depth-${GAME_REVIEW_DEPTH} review of all ${report.totalMoves} moves.`;
+      : report.failedPositions
+        ? `Alpha reviewed ${report.completedMoves}/${report.totalMoves} moves; ${report.failedPositions} position${report.failedPositions === 1 ? "" : "s"} could not return an engine line in time.`
+        : `Alpha completed all ${report.totalMoves} moves in ${Math.max(1, Math.ceil(report.elapsedMs / 1_000))} seconds.`;
     renderSelectedGameReview();
     if (announce) addMessage("engine", selectedGameReportMessage(report));
     return report;
@@ -1536,123 +1553,10 @@ async function analyseSelectedGame(announce = false) {
   }
 }
 
-function quickReviewTimeLimit(deadline, searchesRemaining) {
-  const remainingMs = deadline - Date.now();
-  return Math.min(7_000, Math.floor((remainingMs - 2_500) / Math.max(1, searchesRemaining)));
-}
-
-async function analyseSelectedGameQuickPreview(announce = false) {
-  if (isAnalyzingSelectedGame || selectedDatabaseGame === null) {
-    if (selectedDatabaseGame === null) addMessage("system", "Load a game from the library before asking Alpha for a quick review.");
-    return null;
-  }
-  const record = databaseGames[selectedDatabaseGame];
-  try {
-    materializeGameRecord(record);
-  } catch (error) {
-    addMessage("system", `Could not read this game for a quick review: ${error.message}`);
-    return null;
-  }
-  await checkEngine();
-  if (!engineReady) {
-    addMessage("system", "Connect Alpha’s local analysis engine before reviewing this game.");
-    return null;
-  }
-  isAnalyzingSelectedGame = true;
-  shouldCancelSelectedGameAnalysis = false;
-  selectedGameReview = null;
-  record.gameReview = null;
-  renderSelectedGameReview();
-  const history = record.history;
-  const reviewMoves = selectQuickReviewMoves(history);
-  const reviewedMoves = [];
-  const cachedAnalyse = createAnalysisCache();
-  const reviewStartedAt = Date.now();
-  const deadline = reviewStartedAt + QUICK_GAME_REVIEW_BUDGET_MS;
-  let budgetExpired = false;
-  try {
-    for (let index = 0; index < reviewMoves.length; index += 1) {
-      if (shouldCancelSelectedGameAnalysis) break;
-      const move = reviewMoves[index];
-      const remainingSearches = Math.max(1, (reviewMoves.length - index) * 2);
-      const beforeTimeLimitMs = quickReviewTimeLimit(deadline, remainingSearches);
-      if (beforeTimeLimitMs < 1_500) {
-        budgetExpired = true;
-        break;
-      }
-      element("selected-game-analysis-progress").textContent = `Alpha is checking key decision ${index + 1} of ${reviewMoves.length} from ${history.length} half-moves · target d${GAME_REVIEW_DEPTH}, up to ${Math.round(beforeTimeLimitMs / 1_000)}s each…`;
-      let before;
-      let after;
-      try {
-        before = await cachedAnalyse(move.before, GAME_REVIEW_DEPTH, Boolean(record.chess960), 1, {
-          timeLimitMs: beforeTimeLimitMs,
-          allowPartial: true,
-          minimumDepth: QUICK_GAME_REVIEW_MIN_DEPTH,
-        });
-        const afterTimeLimitMs = quickReviewTimeLimit(deadline, remainingSearches - 1);
-        if (afterTimeLimitMs < 1_500) {
-          budgetExpired = true;
-          break;
-        }
-        after = await cachedAnalyse(move.after, GAME_REVIEW_DEPTH, Boolean(record.chess960), 1, {
-          timeLimitMs: afterTimeLimitMs,
-          allowPartial: true,
-          minimumDepth: QUICK_GAME_REVIEW_MIN_DEPTH,
-        });
-      } catch (error) {
-        if (Date.now() >= deadline - 1_500) {
-          budgetExpired = true;
-          break;
-        }
-        continue;
-      }
-      const beforePlayerScore = scoreForColor(before, move.color);
-      const afterPlayerScore = scoreForColor(after, move.color);
-      const rank = before.lines?.find((line) => line.pv?.[0] === move.uci)?.rank || null;
-      reviewedMoves.push({
-        move,
-        phase: phaseForMove(move),
-        rank,
-        loss: Math.max(0, beforePlayerScore - afterPlayerScore),
-        beforePlayerScore,
-        afterPlayerScore,
-        beforeScore: resultScore(before),
-        afterScore: resultScore(after),
-        analysisDepth: Math.min(before.depth || 0, after.depth || 0),
-        preferredMove: before.bestMove ? uciToSan(move.before, before.bestMove, Boolean(record.chess960)) : null,
-      });
-      if (Date.now() >= deadline) {
-        budgetExpired = true;
-        break;
-      }
-      await yieldToBrowser();
-    }
-    const report = buildSelectedGameReport(record, reviewedMoves, history.length, shouldCancelSelectedGameAnalysis, {
-      mode: "quick",
-      plannedMoves: reviewMoves.length,
-      budgetExpired,
-      elapsedMs: Date.now() - reviewStartedAt,
-      minimumDepth: QUICK_GAME_REVIEW_MIN_DEPTH,
-    });
-    selectedGameReview = report;
-    record.gameReview = report;
-    element("selected-game-analysis-progress").textContent = report.cancelled
-      ? `Alpha stopped after ${report.completedMoves}/${report.plannedMoves} key decisions. The visible results are partial.`
-      : report.budgetExpired
-        ? `Alpha reached the two-minute limit after ${report.completedMoves}/${report.plannedMoves} key decisions.`
-        : `Alpha completed a quick preview of ${report.completedMoves}/${report.plannedMoves} key decisions from ${report.totalMoves} half-moves.`;
-    renderSelectedGameReview();
-    if (announce) addMessage("engine", selectedGameReportMessage(report));
-    return report;
-  } catch (error) {
-    element("selected-game-analysis-progress").textContent = `Quick review stopped: ${error.message}`;
-    addMessage("system", `The quick selected-game review stopped: ${error.message}`);
-    return null;
-  } finally {
-    isAnalyzingSelectedGame = false;
-    shouldCancelSelectedGameAnalysis = false;
-    renderSelectedGameReview();
-  }
+function gameReviewTimeLimit(deadline, positionsRemaining) {
+  const remainingBudget = Math.max(0, deadline - Date.now() - 1_000);
+  const balancedLimit = Math.floor(remainingBudget / Math.max(1, positionsRemaining));
+  return Math.max(GAME_REVIEW_MIN_TIME_MS, Math.min(GAME_REVIEW_MAX_TIME_MS, balancedLimit));
 }
 
 function samePlayerName(first, second) {

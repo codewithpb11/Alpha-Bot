@@ -84,24 +84,27 @@ class BrowserUciEngine {
     this.worker.postMessage(command);
   }
 
-  async analyse({ fen, depth, multiPv = 1, chess960 = false, timeLimitMs = null }) {
+  async analyse({ fen, depth, multiPv = 1, chess960 = false, timeLimitMs = null, reuseGame = false }) {
     await this.start();
-    const run = this.queue.then(() => this.runAnalysis({ fen, depth, multiPv, chess960, timeLimitMs }));
+    const run = this.queue.then(() => this.runAnalysis({ fen, depth, multiPv, chess960, timeLimitMs, reuseGame }));
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  runAnalysis({ fen, depth, multiPv, chess960, timeLimitMs }) {
+  runAnalysis({ fen, depth, multiPv, chess960, timeLimitMs, reuseGame }) {
     const requestedDepth = Math.max(1, Math.min(28, Number.parseInt(depth, 10) || 20));
     const requestedMultiPv = Math.max(1, Math.min(5, Number.parseInt(multiPv, 10) || 1));
     const requestedTimeLimitMs = Number.isFinite(Number(timeLimitMs))
-      ? Math.max(1_000, Math.min(15_000, Math.floor(Number(timeLimitMs))))
+      ? Math.max(50, Math.min(15_000, Math.floor(Number(timeLimitMs))))
       : null;
     return new Promise((resolve, reject) => {
       const latestLines = new Map();
+      let stopGraceTimeout = null;
+      let timeoutError = null;
       const finish = (error, bestMove = null) => {
         if (!this.activeAnalysis) return;
         window.clearTimeout(timeout);
+        if (stopGraceTimeout) window.clearTimeout(stopGraceTimeout);
         this.activeAnalysis = null;
         if (error) {
           reject(error);
@@ -118,11 +121,15 @@ class BrowserUciEngine {
         });
       };
       const timeout = window.setTimeout(() => {
-        try { this.send("stop"); } catch { /* The rejection below explains the failure. */ }
         const limitText = requestedTimeLimitMs
-          ? `within its ${Math.ceil(requestedTimeLimitMs / 1_000)}-second quick-review limit`
+          ? `within its ${Math.ceil(requestedTimeLimitMs / 1_000)}-second review limit`
           : "within three minutes on this device";
-        finish(new Error(`Alpha could not finish depth-${requestedDepth} analysis ${limitText}.`));
+        timeoutError = new Error(`Alpha could not finish depth-${requestedDepth} analysis ${limitText}.`);
+        try { this.send("stop"); } catch { finish(timeoutError); return; }
+        // Wait for the engine's bestmove acknowledgement before allowing the
+        // next queued position to start, preventing a stale bestmove response
+        // from being mistaken for the next review position.
+        stopGraceTimeout = window.setTimeout(() => finish(timeoutError), 1_500);
       }, requestedTimeLimitMs ? requestedTimeLimitMs + 1_500 : ENGINE_ANALYSIS_TIMEOUT_MS);
       this.activeAnalysis = {
         onLine: (line) => {
@@ -132,13 +139,13 @@ class BrowserUciEngine {
             if (!previous || info.depth >= previous.depth) latestLines.set(info.rank, info);
             return;
           }
-          if (line.startsWith("bestmove ")) finish(null, line.split(/\s+/)[1]);
+          if (line.startsWith("bestmove ")) finish(timeoutError, line.split(/\s+/)[1]);
         },
       };
       try {
         this.send(`setoption name MultiPV value ${requestedMultiPv}`);
         this.send(`setoption name UCI_Chess960 value ${chess960 ? "true" : "false"}`);
-        this.send("ucinewgame");
+        if (!reuseGame) this.send("ucinewgame");
         this.send(`position fen ${fen}`);
         this.send(`go depth ${requestedDepth}${requestedTimeLimitMs ? ` movetime ${requestedTimeLimitMs}` : ""}`);
       } catch (error) {
