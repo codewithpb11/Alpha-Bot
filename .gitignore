@@ -1,5 +1,6 @@
 .npm-cache/
 node_modules/
+mobile-dist/
 engine/
 __pycache__/
 *.pyc

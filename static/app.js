@@ -1,6 +1,7 @@
 import { Chess } from "/vendor/chess.js";
 import { Chess as Chess960Pgn, GAME_VARIANT } from "cm-chess";
 import { Chess as Chess960 } from "chess.mjs/src/Chess.js";
+import { fetchPublicGamesOnDevice, isStandaloneAlpha, localAlphaEngine } from "/local-engine.js";
 
 const STARTING_FEN = new Chess().fen();
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -99,6 +100,7 @@ const GAME_REVIEW_MULTI_PV = 3;
 const GAME_LIST_PAGE_SIZE = 100;
 const LIBRARY_AUDIT_DEPTH = 7;
 const LIBRARY_PROFILE_YIELD_EVERY = 12;
+const ON_DEVICE_ENGINE = isStandaloneAlpha();
 
 const element = (id) => document.getElementById(id);
 const boardElement = element("chessboard");
@@ -798,9 +800,13 @@ async function fetchAccountGames() {
       username,
       max: element("account-game-limit").value,
     });
-    const response = await fetch(`/public-games?${params}`, { cache: "no-store" });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Could not load public games.");
+    const payload = ON_DEVICE_ENGINE
+      ? await fetchPublicGamesOnDevice(provider, username, element("account-game-limit").value)
+      : await fetch(`/public-games?${params}`, { cache: "no-store" }).then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Could not load public games.");
+        return body;
+      });
     loadPgnDatabase(payload.pgn, {
       provider: payload.provider,
       username: payload.username,
@@ -1068,6 +1074,17 @@ function addMessage(kind, text) {
 }
 
 async function checkEngine() {
+  if (ON_DEVICE_ENGINE) {
+    try {
+      await localAlphaEngine.start();
+      engineReady = true;
+      setEngineStatus(true, "Alpha is ready on this device");
+    } catch (error) {
+      engineReady = false;
+      setEngineStatus(false, error.message || "Alpha could not start on this device");
+    }
+    return;
+  }
   try {
     const response = await fetch("/health", { cache: "no-store" });
     const status = await response.json();
@@ -1089,20 +1106,16 @@ async function analysePosition() {
   if (isAnalyzing) return null;
   await checkEngine();
   if (!engineReady) {
-    addMessage("system", "Alpha is not connected. Add the local engine path in engine_config.json or start this app with --engine \"C:\\path\\to\\engine.exe\".");
+    addMessage("system", ON_DEVICE_ENGINE
+      ? "Alpha could not start its on-device engine. Restart the app and try again."
+      : "Alpha is not connected. Add the local engine path in engine_config.json or start this app with --engine \"C:\\path\\to\\engine.exe\".");
     return null;
   }
   isAnalyzing = true;
   element("analyse-position").textContent = "Analysing…";
   document.querySelector(".send-button").disabled = true;
   try {
-    const response = await fetch("/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fen: game.fen(), depth: 18, multiPv, chess960: chess960Mode }),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Alpha could not analyse this position.");
+    const payload = await analyseFenAtDepth(game.fen(), 18, chess960Mode, multiPv);
     analysis = payload;
     analysisFen = game.fen();
     renderBoard();
@@ -1129,6 +1142,7 @@ async function analyseFenForReview(fen, chess960 = false) {
 }
 
 async function analyseFenAtDepth(fen, depth, chess960 = false, multiPv = 1) {
+  if (ON_DEVICE_ENGINE) return localAlphaEngine.analyse({ fen, depth, chess960, multiPv });
   const response = await fetch("/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

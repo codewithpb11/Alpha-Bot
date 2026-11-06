@@ -5,10 +5,18 @@
   "description": "A local-first chess database and UCI engine chat app.",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "mobile:assets": "node scripts/build-mobile.mjs",
+    "mobile:sync": "npm run mobile:assets && cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
     "chess.js": "^1.4.0",
-    "cm-chess": "^4.0.1"
+    "cm-chess": "^4.0.1",
+    "stockfish": "^19.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0"
   }
 }

@@ -24,6 +24,14 @@ The local `engine/` folder and `engine_config.json` are intentionally excluded f
 
    The browser opens automatically after `npm start`. Use `npm start -- --no-open` if you only want to start the server.
 
+## Android APK
+
+The public repository includes an Android wrapper for Alpha. It packages the interface and a single-threaded Stockfish 19 WebAssembly engine inside the APK, so board analysis works on the device without the Windows engine executable or a local server.
+
+Every push to `main` runs **Build Android APK** in GitHub Actions. Open that workflow, select the latest successful run, and download the `Alpha-debug-apk` artifact. Transfer the resulting `app-debug.apk` to an Android phone and install it after allowing installs from the file manager/browser you used. This debug APK is installable for personal testing; publishing to Google Play needs a separately signed release build.
+
+The app needs an internet connection only when you choose to retrieve public Chess.com or Lichess games. Imported PGNs and engine analysis remain on the device.
+
 ## Use your downloaded database
 
 Choose **Import PGN** and select one or more `.pgn` files. The complete files are indexed in the browser and never leave your computer. For large collections, every indexed game remains loaded while the library displays them in batches of 100; use **Find a loaded game** or **Show more games** to navigate the collection. Move histories are decoded only when you open or review a game, keeping large databases responsive.

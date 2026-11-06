@@ -1,0 +1,11 @@
+{
+  "appId": "com.codewithpb11.alphabot",
+  "appName": "Alpha",
+  "webDir": "mobile-dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
