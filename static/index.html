@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101726" />
+    <title>Alpha — your chess guide</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">♞</div>
+          <div>
+            <p class="eyebrow">LOCAL CHESS LAB</p>
+            <h1>Alpha</h1>
+          </div>
+        </div>
+        <div class="engine-status" id="engine-status" data-tone="waiting" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="engine-status-text">Checking Alpha…</span>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Chess analysis workspace">
+        <aside class="database-panel panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">YOUR LIBRARY</p>
+              <h2>Position database</h2>
+            </div>
+            <button class="icon-button" id="clear-database" title="Clear imported games" aria-label="Clear imported games">×</button>
+          </div>
+
+          <label class="import-zone" for="pgn-file">
+            <span class="import-icon" aria-hidden="true">↥</span>
+            <strong>Import PGN</strong>
+            <span>Stays on this device</span>
+          </label>
+          <input id="pgn-file" type="file" accept=".pgn,.txt,application/x-chess-pgn,text/plain" multiple hidden />
+          <div class="account-import" aria-labelledby="account-import-title">
+            <div class="account-import-heading">
+              <div>
+                <p class="eyebrow">PLAYER REVIEW</p>
+                <h3 id="account-import-title">Connect game history</h3>
+              </div>
+              <span class="local-badge">PUBLIC / LOCAL</span>
+            </div>
+            <label class="account-field" for="account-provider">
+              <span>Source</span>
+              <select id="account-provider">
+                <option value="chesscom">Chess.com — public username</option>
+                <option value="lichess">Lichess — public username</option>
+              </select>
+            </label>
+            <div class="account-row">
+              <label class="account-field account-name" for="account-username">
+                <span>Username / player name</span>
+                <input id="account-username" autocomplete="off" spellcheck="false" placeholder="e.g. yourusername" />
+              </label>
+              <label class="account-field account-count" for="account-game-limit">
+                <span>Games</span>
+                <select id="account-game-limit">
+                  <option value="all" selected>All</option>
+                  <option value="25">25</option>
+                  <option value="100">100</option>
+                  <option value="500">500</option>
+                </select>
+              </label>
+            </div>
+            <button class="connect-button" id="fetch-account-games" type="button">Load public games</button>
+            <p class="account-help" id="account-help">Use a public profile only. The app never asks for a password or an account token.</p>
+          </div>
+          <div class="player-report-tools" id="player-report-tools" hidden>
+            <div>
+              <p class="eyebrow">ALPHA REVIEW</p>
+              <strong id="player-report-title">Recent-game review</strong>
+            </div>
+            <button class="review-button" id="analyse-player-games" type="button">Review recent games</button>
+          </div>
+          <section class="selected-game-review" id="selected-game-review" hidden aria-labelledby="selected-game-review-title">
+            <div class="account-import-heading">
+              <div>
+                <p class="eyebrow">ALPHA GAME REVIEW</p>
+                <h3 id="selected-game-review-title">Selected game</h3>
+              </div>
+              <span class="local-badge">LOCAL / FREE</span>
+            </div>
+            <p class="selected-game-copy" id="selected-game-review-label">Choose a loaded game to review every move.</p>
+            <div class="selected-game-actions">
+              <button class="connect-button" id="analyse-selected-game" type="button">Analyse every move</button>
+              <button class="text-button" id="cancel-selected-game-analysis" type="button" hidden>Stop</button>
+            </div>
+            <p class="selected-game-progress" id="selected-game-analysis-progress">Alpha uses local depth-10 analysis. Accuracy and performance are transparent estimates, not Chess.com scores or ratings.</p>
+            <div class="selected-game-summary" id="selected-game-analysis-summary" hidden aria-live="polite"></div>
+          </section>
+          <section class="library-coach" id="library-coach" hidden aria-labelledby="library-coach-title">
+            <div class="account-import-heading">
+              <div>
+                <p class="eyebrow">FULL DATABASE COACH</p>
+                <h3 id="library-coach-title">Whole-library verdict</h3>
+              </div>
+              <span class="local-badge">ALL GAMES</span>
+            </div>
+            <p class="library-coach-copy">Build a profile from every loaded game: results over time, opening habits, maneuvers, tactical activity, endgames, and playing style.</p>
+            <button class="connect-button" id="build-library-profile" type="button">Build full-library profile</button>
+            <label class="account-field" for="library-scan-mode">
+              <span>Alpha coverage</span>
+              <select id="library-scan-mode">
+                <option value="1" selected>1 diagnostic decision per game</option>
+                <option value="3">Up to 3 phase checks per game</option>
+              </select>
+            </label>
+            <div class="library-coach-actions">
+              <button class="review-button" id="scan-library-engine" type="button" disabled>Scan all games with Alpha</button>
+              <button class="text-button" id="cancel-library-scan" type="button" hidden>Stop scan</button>
+            </div>
+            <p class="library-progress" id="library-progress" aria-live="polite">Build the full-library profile first.</p>
+            <div class="library-report-summary" id="library-report-summary" hidden aria-live="polite"></div>
+          </section>
+          <p class="library-note" id="library-note">Load a game collection to jump straight into any position.</p>
+          <label class="game-search" for="game-search">
+            <span>Find a loaded game</span>
+            <input id="game-search" type="search" autocomplete="off" placeholder="Player, event, date, result…" />
+          </label>
+          <div class="game-list" id="game-list" aria-live="polite"></div>
+        </aside>
+
+        <section class="board-panel panel">
+          <div class="board-toolbar">
+            <div>
+              <p class="eyebrow">CURRENT POSITION</p>
+              <h2 id="position-title">Starting position</h2>
+            </div>
+            <button class="subtle-button" id="flip-board">⇅ Flip</button>
+          </div>
+
+          <div class="chessboard" id="chessboard" role="grid" aria-label="Interactive chessboard"></div>
+          <div class="board-annotation-tools">
+            <span>Click or left-drag a piece to move it. Right-drag between squares to draw an analysis arrow.</span>
+            <button class="text-button" id="clear-arrows" type="button">Clear arrows</button>
+          </div>
+
+          <div class="timeline-controls">
+            <button class="move-button" id="previous-move" aria-label="Previous move">←</button>
+            <div class="move-history" id="move-history" aria-label="Game moves"></div>
+            <button class="move-button" id="next-move" aria-label="Next move">→</button>
+          </div>
+
+          <div class="position-tools">
+            <button class="secondary-button" id="new-game">New game</button>
+            <button class="secondary-button" id="analyse-position">Analyse position</button>
+            <button class="secondary-button" id="copy-fen">Copy FEN</button>
+          </div>
+
+          <div class="board-settings" aria-label="Board and Alpha options">
+            <label class="setting-field" for="multi-pv">
+              <span>Alpha's best moves</span>
+              <select id="multi-pv">
+                <option value="1">1 line</option>
+                <option value="2">2 lines</option>
+                <option value="3">3 lines</option>
+                <option value="4">4 lines</option>
+              </select>
+            </label>
+            <label class="setting-field" for="board-theme">
+              <span>Board</span>
+              <select id="board-theme">
+                <option value="blue">Midnight blue</option>
+                <option value="walnut">Walnut</option>
+                <option value="forest">Forest</option>
+                <option value="mono">Monochrome</option>
+                <option value="sand">Desert sand</option>
+                <option value="rosewood">Rosewood</option>
+                <option value="ocean">Ocean</option>
+                <option value="violet">Violet</option>
+                <option value="tournament">Tournament</option>
+                <option value="charcoal">Charcoal</option>
+              </select>
+            </label>
+            <label class="setting-field" for="piece-theme">
+              <span>Pieces</span>
+              <select id="piece-theme">
+                <option value="classic">Classic</option>
+                <option value="minimal">Minimal</option>
+                <option value="contrast">High contrast</option>
+                <option value="graphite">Graphite</option>
+                <option value="ivory">Ivory</option>
+                <option value="gold">Gold</option>
+                <option value="steel">Blue steel</option>
+                <option value="wood">Wooden</option>
+                <option value="neon">Neon</option>
+                <option value="mono-piece">Monochrome</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="fen-control">
+            <label for="fen-input">Position FEN</label>
+            <div class="fen-row">
+              <input id="fen-input" spellcheck="false" autocomplete="off" />
+              <button id="load-fen">Load</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="dialogue-panel panel">
+          <div class="panel-heading dialogue-heading">
+            <div>
+              <p class="eyebrow">ALPHA · CHESS GUIDE</p>
+              <h2>Ask Alpha</h2>
+            </div>
+            <button class="icon-button" id="clear-chat" title="Clear conversation" aria-label="Clear conversation">×</button>
+          </div>
+
+          <div class="analysis-glance" id="analysis-glance">
+            <div>
+              <span class="glance-label">EVALUATION</span>
+              <strong id="evaluation-value">—</strong>
+              <span id="evaluation-caption">Run an analysis to begin</span>
+            </div>
+            <div class="best-move-glance">
+              <span class="glance-label">ALPHA'S MOVE</span>
+              <strong id="best-move-value">—</strong>
+              <span id="engine-depth">Depth —</span>
+            </div>
+          </div>
+
+          <div class="candidate-lines" id="candidate-lines" aria-live="polite">
+            <p>Select between one and four lines, then analyse to compare Alpha’s best moves.</p>
+          </div>
+
+          <div class="suggestions" aria-label="Suggested questions">
+            <button data-question="Load a Caro-Kann position.">Caro-Kann</button>
+            <button data-question="Show a solid Sicilian position.">Solid Sicilian</button>
+            <button data-question="Review my recent games and identify my recurring weaknesses.">My weaknesses</button>
+            <button data-question="Coach me using my full games database.">Full database coach</button>
+            <button data-question="What opening inaccuracies show up in my games?">Opening review</button>
+            <button data-question="Show me my middlegame and endgame mistakes.">Game phases</button>
+            <button data-question="What is the best move here?">Best move</button>
+            <button data-question="Who is better and why?">Who is better?</button>
+            <button data-question="Show the top candidate moves.">Candidates</button>
+            <button data-question="Is there a tactic in this position?">Tactics</button>
+            <button data-question="What is Alpha's plan?">Plan</button>
+          </div>
+
+          <div class="chat-log" id="chat-log" aria-live="polite" aria-label="Conversation"></div>
+
+          <form class="chat-composer" id="chat-form">
+            <label class="sr-only" for="chat-input">Ask a chess question</label>
+            <textarea id="chat-input" rows="2" placeholder="Ask about this position…"></textarea>
+            <button class="send-button" type="submit" aria-label="Send question">↑</button>
+          </form>
+          <p class="chat-footnote">Alpha's position answers use local analysis and principal variations. Public profile imports are requested only when you choose them; player reports stay in this browser session.</p>
+        </section>
+      </section>
+    </main>
+    <template id="empty-library-template">
+      <div class="empty-library">Your imported games will appear here.</div>
+    </template>
+    <script type="importmap">
+      {
+        "imports": {
+          "cm-chess": "/vendor/cm-chess/Chess.js",
+          "cm-pgn/": "/vendor/cm-pgn/",
+          "chess.mjs/": "/vendor/chess.mjs/"
+        }
+      }
+    </script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

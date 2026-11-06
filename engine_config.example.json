@@ -1,0 +1,5 @@
+{
+  "enginePath": "C:\\path\\to\\chess-engine.exe",
+  "defaultDepth": 18,
+  "defaultMultiPv": 3
+}
