@@ -24,6 +24,7 @@ const MAX_DEPTH = 28;
 const MAX_MULTI_PV = 5;
 const MAX_BODY_BYTES = 32_000;
 const ENGINE_TIMEOUT_MS = 45_000;
+const MAX_QUICK_ANALYSIS_MS = 15_000;
 const REMOTE_TIMEOUT_MS = 18_000;
 const PROFILE_USER_AGENT = "Engine-Dialogue/0.2 (local chess study tool)";
 
@@ -243,17 +244,20 @@ class UciEngine {
     this.lastError = null;
   }
 
-  analyse(fen, depth, multiPv, chess960 = false) {
-    const run = this.analysisQueue.then(() => this.#analyse(fen, depth, multiPv, chess960));
+  analyse(fen, depth, multiPv, chess960 = false, timeLimitMs = null) {
+    const run = this.analysisQueue.then(() => this.#analyse(fen, depth, multiPv, chess960, timeLimitMs));
     this.analysisQueue = run.catch(() => undefined);
     return run;
   }
 
-  async #analyse(fen, requestedDepth, requestedMultiPv, chess960) {
+  async #analyse(fen, requestedDepth, requestedMultiPv, chess960, requestedTimeLimitMs) {
     if (!isCompleteFen(fen)) throw new EngineError("This does not look like a complete FEN position.");
     await this.start();
     const depth = clampInteger(requestedDepth, 20, 1, MAX_DEPTH);
     const multiPv = clampInteger(requestedMultiPv, 3, 1, MAX_MULTI_PV);
+    const timeLimitMs = Number.isFinite(Number(requestedTimeLimitMs))
+      ? clampInteger(requestedTimeLimitMs, MAX_QUICK_ANALYSIS_MS, 1_000, MAX_QUICK_ANALYSIS_MS)
+      : null;
     try {
       this.#send(`setoption name MultiPV value ${multiPv}`);
       this.#send(`setoption name UCI_Chess960 value ${chess960 ? "true" : "false"}`);
@@ -261,11 +265,11 @@ class UciEngine {
       this.#send("isready");
       await this.#waitFor((line) => line === "readyok", 10_000);
       this.#send(`position fen ${fen}`);
-      this.#send(`go depth ${depth}`);
+      this.#send(`go depth ${depth}${timeLimitMs ? ` movetime ${timeLimitMs}` : ""}`);
 
       const candidates = new Map();
       let bestMove = null;
-      const deadline = Date.now() + ENGINE_TIMEOUT_MS;
+      const deadline = Date.now() + (timeLimitMs ? timeLimitMs + 1_500 : ENGINE_TIMEOUT_MS);
       while (Date.now() < deadline) {
         let line;
         try {
@@ -287,11 +291,13 @@ class UciEngine {
             engine: this.name,
             depth: Math.max(0, ...[...candidates.values()].map((candidate) => candidate.depth)),
             bestMove,
+            timeLimitMs,
             lines: [...candidates.values()].sort((a, b) => a.rank - b.rank),
           };
         }
       }
-      throw new EngineError("Engine analysis exceeded the 45-second limit.");
+      try { this.#send("stop"); } catch {}
+      throw new EngineError(timeLimitMs ? "Engine analysis exceeded the quick-review time limit." : "Engine analysis exceeded the 45-second limit.");
     } catch (error) {
       this.lastError = error.message;
       throw error;
@@ -503,7 +509,7 @@ async function makeApp() {
       try {
         const payload = await readJson(request);
         if (!engine) throw new EngineError("No engine configured. Add engine_config.json or start with --engine.");
-        const result = await engine.analyse(payload.fen, payload.depth, payload.multiPv, payload.chess960 === true);
+        const result = await engine.analyse(payload.fen, payload.depth, payload.multiPv, payload.chess960 === true, payload.timeLimitMs);
         json(response, 200, result);
       } catch (error) {
         json(response, error instanceof EngineError ? 400 : 500, { error: error.message || "Unexpected analysis error." });
