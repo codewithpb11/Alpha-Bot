@@ -26,7 +26,7 @@ The local `engine/` folder and `engine_config.json` are intentionally excluded f
 
 ## Android APK
 
-The public repository includes an Android wrapper for Alpha. It packages the interface and a single-threaded Stockfish 19 WebAssembly engine inside the APK, so board analysis works on the device without the Windows engine executable or a local server. Version 1.1.0 targets depth 20 and displays the achieved/target engine depth (for example, `Depth 20/20`); it refuses to label a shallower result as final.
+The public repository includes an Android wrapper for Alpha. It packages the interface and a single-threaded Stockfish 19 WebAssembly engine inside the APK, so board analysis works on the device without the Windows engine executable or a local server. Version 1.2.0 targets depth 20 and displays the achieved/target engine depth (for example, `Depth 20/20`); it refuses to label a shallower result as final. On Android, Alpha defaults to one candidate line for its fastest depth-20 search; choose two to four lines when comparison matters more than speed. Full-game reviews reuse engine results for positions already checked instead of calculating the same position twice.
 
 Every push to `main` runs **Build Android APK** in GitHub Actions. Open that workflow, select the latest successful run, and download the `Alpha-debug-apk` artifact. Transfer the resulting `app-debug.apk` to an Android phone and install it after allowing installs from the file manager/browser you used. This debug APK is installable for personal testing; publishing to Google Play needs a separately signed release build.
 

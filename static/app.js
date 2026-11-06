@@ -105,6 +105,8 @@ const GAME_LIST_PAGE_SIZE = 100;
 const LIBRARY_AUDIT_DEPTH = 20;
 const LIBRARY_PROFILE_YIELD_EVERY = 12;
 const ON_DEVICE_ENGINE = isStandaloneAlpha();
+const DEFAULT_MULTI_PV = ON_DEVICE_ENGINE ? 1 : 3;
+const MOBILE_SPEED_PROFILE = "depth20-fast-v1";
 
 const element = (id) => document.getElementById(id);
 const boardElement = element("chessboard");
@@ -138,7 +140,7 @@ let analysis = null;
 let analysisFen = null;
 let isAnalyzing = false;
 let engineReady = false;
-let multiPv = Number(readPreference("multi-pv", "3"));
+let multiPv = Number(readPreference("multi-pv", String(DEFAULT_MULTI_PV)));
 let boardTheme = readPreference("board-theme", "blue");
 let pieceTheme = readPreference("piece-theme", "classic");
 let currentPositionName = null;
@@ -161,7 +163,14 @@ let isScanningLibrary = false;
 let shouldCancelLibraryScan = false;
 
 function init() {
-  multiPv = [1, 2, 3, 4].includes(multiPv) ? multiPv : 3;
+  // Upgrade existing mobile installs once to the fast depth-20 default. A
+  // player may still select 2–4 lines afterwards and that choice persists.
+  if (ON_DEVICE_ENGINE && readPreference("mobile-speed-profile", "") !== MOBILE_SPEED_PROFILE) {
+    multiPv = 1;
+    savePreference("multi-pv", "1");
+    savePreference("mobile-speed-profile", MOBILE_SPEED_PROFILE);
+  }
+  multiPv = [1, 2, 3, 4].includes(multiPv) ? multiPv : DEFAULT_MULTI_PV;
   boardTheme = BOARD_THEMES.includes(boardTheme) ? boardTheme : "blue";
   pieceTheme = PIECE_THEMES.includes(pieceTheme) ? pieceTheme : "classic";
   element("multi-pv").value = String(multiPv);
@@ -1166,6 +1175,18 @@ async function analyseFenAtDepth(fen, depth, chess960 = false, multiPv = 1) {
   return { ...result, requestedDepth: depth };
 }
 
+function createAnalysisCache() {
+  const entries = new Map();
+  return (fen, depth, chess960 = false, multiPv = 1) => {
+    const key = `${fen}|${depth}|${chess960 ? "960" : "standard"}`;
+    const cached = entries.get(key);
+    if (cached && cached.multiPv >= multiPv) return cached.result;
+    const result = analyseFenAtDepth(fen, depth, chess960, multiPv);
+    entries.set(key, { multiPv, result });
+    return result;
+  };
+}
+
 function freshMoveLabelCounts() {
   return {
     brilliant: 0,
@@ -1393,13 +1414,21 @@ async function analyseSelectedGame(announce = false) {
   renderSelectedGameReview();
   const history = record.history;
   const reviewedMoves = [];
+  const cachedAnalyse = createAnalysisCache();
   try {
     for (let index = 0; index < history.length; index += 1) {
       if (shouldCancelSelectedGameAnalysis) break;
       const move = history[index];
       element("selected-game-analysis-progress").textContent = `Alpha is checking move ${index + 1} of ${history.length} at depth ${GAME_REVIEW_DEPTH}…`;
-      const before = await analyseFenAtDepth(move.before, GAME_REVIEW_DEPTH, Boolean(record.chess960), GAME_REVIEW_MULTI_PV);
-      const after = await analyseFenAtDepth(move.after, GAME_REVIEW_DEPTH, Boolean(record.chess960));
+      const before = await cachedAnalyse(move.before, GAME_REVIEW_DEPTH, Boolean(record.chess960), GAME_REVIEW_MULTI_PV);
+      // This resulting position is the next half-move's "before" position.
+      // Ask for its candidate lines now, then reuse it on the next loop.
+      const after = await cachedAnalyse(
+        move.after,
+        GAME_REVIEW_DEPTH,
+        Boolean(record.chess960),
+        index < history.length - 1 ? GAME_REVIEW_MULTI_PV : 1,
+      );
       const beforePlayerScore = scoreForColor(before, move.color);
       const afterPlayerScore = scoreForColor(after, move.color);
       const rank = before.lines?.find((line) => line.pv?.[0] === move.uci)?.rank || null;
@@ -1839,6 +1868,7 @@ async function runLibraryEngineAudit(announce = false) {
       }
       const entry = profile.auditEntries[cursor];
       const record = databaseGames[entry.index];
+      const cachedAnalyse = createAnalysisCache();
       setLibraryProgress(`Alpha scan: game ${cursor + 1} of ${profile.auditEntries.length} · ${audit.decisionChecks} decisions checked…`);
       try {
         const history = historyForProfile(record);
@@ -1852,8 +1882,8 @@ async function runLibraryEngineAudit(announce = false) {
             audit.cancelled = true;
             break scanGames;
           }
-          const before = await analyseFenAtDepth(move.before, LIBRARY_AUDIT_DEPTH, entry.chess960);
-          const after = await analyseFenAtDepth(move.after, LIBRARY_AUDIT_DEPTH, entry.chess960);
+          const before = await cachedAnalyse(move.before, LIBRARY_AUDIT_DEPTH, entry.chess960);
+          const after = await cachedAnalyse(move.after, LIBRARY_AUDIT_DEPTH, entry.chess960);
           const beforeScore = scoreForWhite(before);
           const afterScore = scoreForWhite(after);
           const loss = Math.max(0, entry.color === "w" ? beforeScore - afterScore : afterScore - beforeScore);
@@ -2070,13 +2100,14 @@ async function buildPlayerReport(announce = false) {
     endgame: { blunder: 0, mistake: 0, inaccuracy: 0 },
   };
   const totals = { blunder: 0, mistake: 0, inaccuracy: 0 };
+  const cachedAnalyse = createAnalysisCache();
   try {
     for (let index = 0; index < reviewQueue.length; index += 1) {
       const item = reviewQueue[index];
       reviewButton.textContent = `Reviewing ${index + 1}/${reviewQueue.length}…`;
       const [before, after] = await Promise.all([
-        analyseFenForReview(item.move.before, Boolean(item.record.chess960)),
-        analyseFenForReview(item.move.after, Boolean(item.record.chess960)),
+        cachedAnalyse(item.move.before, REPORT_DEPTH, Boolean(item.record.chess960)),
+        cachedAnalyse(item.move.after, REPORT_DEPTH, Boolean(item.record.chess960)),
       ]);
       const beforeScore = scoreForWhite(before);
       const afterScore = scoreForWhite(after);
