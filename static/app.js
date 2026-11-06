@@ -337,14 +337,16 @@ function renderAnalysisGlance() {
     element("evaluation-value").textContent = "—";
     element("evaluation-caption").textContent = "Run an analysis to begin";
     element("best-move-value").textContent = "—";
-    element("engine-depth").textContent = "Depth —";
+    element("engine-depth").textContent = `Target depth ${POSITION_ANALYSIS_DEPTH}`;
     return;
   }
   const principal = analysis.lines?.[0];
   element("evaluation-value").textContent = principal ? formatScore(principal.score) : "—";
   element("evaluation-caption").textContent = principal ? evaluationCaption(principal.score) : "No score returned";
   element("best-move-value").textContent = analysis.bestMove ? uciToSan(game.fen(), analysis.bestMove) : "—";
-  element("engine-depth").textContent = `Depth ${analysis.depth || principal?.depth || "—"} · ${analysis.lines.length} line${analysis.lines.length === 1 ? "" : "s"}`;
+  const achievedDepth = analysis.depth || principal?.depth || "—";
+  const requestedDepth = analysis.requestedDepth || POSITION_ANALYSIS_DEPTH;
+  element("engine-depth").textContent = `Depth ${achievedDepth}/${requestedDepth} · ${analysis.lines.length} line${analysis.lines.length === 1 ? "" : "s"}`;
 }
 
 function renderCandidateLines() {
@@ -1146,15 +1148,22 @@ async function analyseFenForReview(fen, chess960 = false) {
 }
 
 async function analyseFenAtDepth(fen, depth, chess960 = false, multiPv = 1) {
-  if (ON_DEVICE_ENGINE) return localAlphaEngine.analyse({ fen, depth, chess960, multiPv });
-  const response = await fetch("/analyze", {
+  const result = ON_DEVICE_ENGINE
+    ? await localAlphaEngine.analyse({ fen, depth, chess960, multiPv })
+    : await fetch("/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ fen, depth, multiPv, chess960 }),
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Alpha could not analyse this game position.");
-  return payload;
+    }).then(async (response) => {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Alpha could not analyse this game position.");
+      return payload;
+    });
+  const reachedDepth = Number(result?.depth || result?.lines?.[0]?.depth || 0);
+  if (reachedDepth < depth) {
+    throw new Error(`Alpha reached depth ${reachedDepth} before its depth-${depth} target. This result was not used; try again.`);
+  }
+  return { ...result, requestedDepth: depth };
 }
 
 function freshMoveLabelCounts() {

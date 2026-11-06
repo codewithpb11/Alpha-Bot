@@ -1,6 +1,8 @@
 const ENGINE_WORKER_URL = "/vendor/stockfish/stockfish-19-lite-single.js";
 const ENGINE_START_TIMEOUT_MS = 20_000;
-const ENGINE_ANALYSIS_TIMEOUT_MS = 60_000;
+// A depth-20 Stockfish pass can take more than one minute on a modest phone.
+// Do not silently stop it at a shallow depth and report that result as final.
+const ENGINE_ANALYSIS_TIMEOUT_MS = 180_000;
 
 export function isStandaloneAlpha() {
   try {
@@ -90,7 +92,7 @@ class BrowserUciEngine {
   }
 
   runAnalysis({ fen, depth, multiPv, chess960 }) {
-    const requestedDepth = Math.max(1, Math.min(28, Number.parseInt(depth, 10) || 18));
+    const requestedDepth = Math.max(1, Math.min(28, Number.parseInt(depth, 10) || 20));
     const requestedMultiPv = Math.max(1, Math.min(5, Number.parseInt(multiPv, 10) || 1));
     return new Promise((resolve, reject) => {
       const latestLines = new Map();
@@ -103,15 +105,21 @@ class BrowserUciEngine {
           return;
         }
         const lines = [...latestLines.values()].sort((left, right) => left.rank - right.rank);
+        const reachedDepth = Math.max(0, ...lines.map((line) => line.depth));
+        if (reachedDepth < requestedDepth) {
+          reject(new Error(`Alpha reached depth ${reachedDepth} before its depth-${requestedDepth} target. This result was not used; try again and keep the app open.`));
+          return;
+        }
         resolve({
           bestMove: bestMove && bestMove !== "(none)" ? bestMove : lines[0]?.pv?.[0] || null,
-          depth: Math.max(0, ...lines.map((line) => line.depth)),
+          depth: reachedDepth,
+          requestedDepth,
           lines,
         });
       };
       const timeout = window.setTimeout(() => {
         try { this.send("stop"); } catch { /* The rejection below explains the failure. */ }
-        finish(new Error("Alpha’s local engine timed out while analysing this position."));
+        finish(new Error(`Alpha could not reach its depth-${requestedDepth} target within three minutes on this device.`));
       }, ENGINE_ANALYSIS_TIMEOUT_MS);
       this.activeAnalysis = {
         onLine: (line) => {

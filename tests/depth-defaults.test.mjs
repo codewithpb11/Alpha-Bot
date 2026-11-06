@@ -9,4 +9,6 @@ test("uses depth 20 for Alpha's position and coaching analysis", async () => {
   assert.match(source, /const GAME_REVIEW_DEPTH = 20;/);
   assert.match(source, /const LIBRARY_AUDIT_DEPTH = 20;/);
   assert.match(source, /analyseFenAtDepth\(game\.fen\(\), POSITION_ANALYSIS_DEPTH, chess960Mode, multiPv\)/);
+  assert.match(source, /Depth \$\{achievedDepth\}\/\$\{requestedDepth\}/);
+  assert.match(source, /reached depth \$\{reachedDepth\} before its depth-\$\{depth\} target/);
 });
