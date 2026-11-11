@@ -1,0 +1,44 @@
+Categories:
+  - Games
+License: GPL-3.0-only
+AuthorName: codewithpb11
+SourceCode: https://github.com/codewithpb11/Alpha-Bot
+IssueTracker: https://github.com/codewithpb11/Alpha-Bot/issues
+RepoType: git
+Repo: https://github.com/codewithpb11/Alpha-Bot.git
+
+Builds:
+  - versionName: 1.4.0
+    versionCode: 5
+    commit: 2b0f0dcae7f982ef61321a31bb0095cfff0ec23c
+    subdir: android
+    sudo:
+      - apt-get update
+      - apt-get install -y nodejs npm openjdk-21-jdk-headless
+      - update-alternatives --auto java
+    build:
+      - npm ci --ignore-scripts --prefix ..
+      - npm --prefix .. run mobile:fdroid
+    gradle:
+      - yes
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+
+MaintainerNotes: |-
+  The source commit is the immutable v1.4.0 release tag. The Android project
+  targets Java 21 and uses Gradle 8.14.3 / Android Gradle Plugin 8.13.0.
+
+  The build runs npm ci only after F-Droid's source scan, then uses the custom
+  mobile:fdroid script rather than the Capacitor CLI. That script creates the
+  Android web assets/config from source and pinned npm packages.
+
+  The bundled engine is the unmodified, GPL-3.0 Stockfish.js 19.0.1 Lite,
+  single-threaded WebAssembly build. Its exact upstream source commit, compiler
+  version, and SHA-256 hashes are in THIRD_PARTY_SOURCES.md. If source scanning
+  or review requires the WebAssembly engine to be rebuilt in the F-Droid build
+  environment, please request a follow-up Alpha source release with that build
+  integration rather than accepting an opaque prebuilt binary.
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v(\d+\.\d+\.\d+)$
+CurrentVersion: 1.4.0
+CurrentVersionCode: 5
