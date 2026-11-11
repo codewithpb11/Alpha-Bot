@@ -12,6 +12,9 @@ submission steps.
 - **Version code:** 6
 - **Category:** Games / Board
 - **Licence:** GPL-3.0-only
+- **Listing type:** One-time paid download (not a subscription)
+- **Launch base price:** US$1.49
+- **India launch price:** ₹149, if this price is available in Seller Portal
 - **Privacy-policy URL:**
   `https://github.com/codewithpb11/Alpha-Bot/blob/main/PRIVACY.md`
 - **Support URL:** `https://github.com/codewithpb11/Alpha-Bot/issues`
@@ -76,13 +79,18 @@ PGNs, emails, passwords, or account details.
 
 1. Complete Samsung Seller Portal registration and its required seller
    verification yourself.
-2. Choose whether the listing is free or paid. A paid listing requires your
-   own payout and tax details; Alpha's source code does not include them.
-3. Build a **signed release APK** from this exact source with Alpha's existing
+2. Configure the listing as a **one-time paid app**. Set the base price to
+   **US$1.49** and, where Seller Portal permits local prices, set India to
+   **₹149**. Check the displayed local-price table before submitting; Samsung
+   may calculate a local price from the base price when a manual local price is
+   unavailable.
+3. Enter your own payout and tax details. These are not part of Alpha's source
+   code and must never be committed to Git or sent to support.
+4. Build a **signed release APK** from this exact source with Alpha's existing
    private release key. Do not upload a debug APK or a GitHub Actions artifact.
-4. Install that APK on a phone and test public-game import, position analysis,
+5. Install that APK on a phone and test public-game import, position analysis,
    the game review, and the Privacy & data policy screen.
-5. Add the signed APK, listing copy, icon, screenshots, privacy-policy URL,
+6. Add the signed APK, listing copy, icon, screenshots, privacy-policy URL,
    and support email in the Seller Portal. Review every field before you submit
    the app for Samsung's review.
 
