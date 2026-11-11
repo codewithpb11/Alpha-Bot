@@ -26,11 +26,11 @@ The local `engine/` folder and `engine_config.json` are intentionally excluded f
 
 ## Android APK
 
-The public repository includes an Android wrapper for Alpha. It packages the interface and a single-threaded Stockfish 19 WebAssembly engine inside the APK, so board analysis works on the device without the Windows engine executable or a local server. Version 1.4.1 targets depth 20 and displays the achieved/target engine depth (for example, `Depth 20/20`). On Android, Alpha defaults to one candidate line for its fastest depth-20 search; choose two to four lines when comparison matters more than speed. Selected-game review checks every played move once, reuses the resulting position for the following move, and divides a three-minute budget across the entire game.
+The public repository includes an Android wrapper for Alpha. It packages the interface and a single-threaded Stockfish 19 WebAssembly engine inside the APK, so board analysis works on the device without the Windows engine executable or a local server. Version 1.4.2 targets depth 20 and displays the achieved/target engine depth (for example, `Depth 20/20`). On Android, Alpha defaults to one candidate line for its fastest depth-20 search; choose two to four lines when comparison matters more than speed. Selected-game review checks every played move once, reuses the resulting position for the following move, and divides a three-minute budget across the entire game.
 
 Every push to `main` runs **Build Android APK** in GitHub Actions. Its `Alpha-debug-apk` artifact is an unsigned-for-release *development/testing build*; it is not the customer or store release and must not be represented as one.
 
-Production Android releases must be built from this source and signed with Alpha's release key. Version 1.4.1's source will be published as the [v1.4.1 release tag](https://github.com/codewithpb11/Alpha-Bot/tree/v1.4.1). Obtain installable releases only from Alpha's official store listing once available, rather than from copied APKs or GitHub Actions artifacts. A store-delivered release gives users an identifiable publisher and an update channel.
+Production Android releases must be built from this source and signed with Alpha's release key. Version 1.4.2's source will be published as the [v1.4.2 release tag](https://github.com/codewithpb11/Alpha-Bot/tree/v1.4.2). Obtain installable releases only from Alpha's official store listing once available, rather than from copied APKs or GitHub Actions artifacts. A store-delivered release gives users an identifiable publisher and an update channel.
 
 The app needs an internet connection only when you choose to retrieve public Chess.com or Lichess games. Imported PGNs and engine analysis remain on the device.
 

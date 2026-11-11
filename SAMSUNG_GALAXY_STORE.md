@@ -8,8 +8,8 @@ submission steps.
 
 - **App name:** Alpha – Local Chess Analysis
 - **Package ID:** `com.codewithpb11.alphabot`
-- **Version:** 1.4.1
-- **Version code:** 6
+- **Version:** 1.4.2
+- **Version code:** 7
 - **Category:** Games / Board
 - **Licence:** GPL-3.0-only
 - **Listing type:** One-time paid download (not a subscription)
@@ -54,8 +54,9 @@ to Chess.com or Lichess and does not pass through an Alpha server.
 Alpha is open source under GPL-3.0. It uses Stockfish 19 in a
 single-threaded WebAssembly configuration for on-device analysis.
 
-## Release notes for 1.4.1
+## Release notes for 1.4.2
 
+- Replaced Alpha's launcher and in-app logo with the official knight mark.
 - Added an in-app Privacy & data policy screen.
 - Linked the policy from the main chess-analysis screen.
 - Kept public-game imports opt-in and direct to the selected service.

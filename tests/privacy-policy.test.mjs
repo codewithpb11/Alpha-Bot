@@ -14,3 +14,13 @@ test("ships an in-app privacy policy for public-game imports", async () => {
   assert.match(policy, /lichess\.org\/api/);
   assert.match(policy, /does not ask for Chess\.com or Lichess passwords/);
 });
+
+test("uses the official knight mark in the Alpha header", async () => {
+  const [app, logo] = await Promise.all([
+    readFile(new URL("../static/index.html", import.meta.url), "utf8"),
+    readFile(new URL("../static/assets/alpha-logo.png", import.meta.url)),
+  ]);
+
+  assert.match(app, /src="\/assets\/alpha-logo\.png"/);
+  assert.ok(logo.length > 0);
+});
