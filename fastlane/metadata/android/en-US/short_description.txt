@@ -1,0 +1,1 @@
+Local chess analysis, game review, and public-PGN import

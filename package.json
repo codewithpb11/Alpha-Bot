@@ -1,12 +1,14 @@
 {
-  "name": "engine-dialogue",
+  "name": "alpha-chess-analysis",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.4.0",
   "description": "A local-first chess database and UCI engine chat app.",
+  "license": "GPL-3.0-only",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test tests/*.test.mjs",
     "mobile:assets": "node scripts/build-mobile.mjs",
+    "mobile:fdroid": "npm run mobile:assets && node scripts/sync-fdroid-assets.mjs",
     "mobile:sync": "npm run mobile:assets && cap sync android"
   },
   "dependencies": {

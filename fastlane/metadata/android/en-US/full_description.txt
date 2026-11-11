@@ -1,0 +1,32 @@
+Alpha is a local-first chess analysis app for Android.
+
+It lets you load a position, make moves on an interactive board, import PGNs,
+and ask focused engine questions. Alpha runs its bundled Stockfish engine on
+the device, so board analysis and locally imported PGNs work without an Alpha
+account or an analysis server.
+
+<b>Features</b>
+<ul>
+<li>Analyse positions and compare one to four candidate moves.</li>
+<li>Review every move in a loaded game, with move classifications and
+accuracy estimates.</li>
+<li>Import PGNs and browse a local game library.</li>
+<li>Build a whole-library profile for openings, game phases, style, and
+recurring mistakes.</li>
+<li>Load representative positions from common openings directly from chat.</li>
+<li>Choose board themes and piece styles, draw arrows, and explore move
+history.</li>
+</ul>
+
+<b>Privacy and network use</b>
+
+Alpha does not require an account and does not ask for Chess.com or Lichess
+passwords, cookies, or tokens. It contains no ads or analytics SDKs. The app
+only uses the network when you explicitly ask it to import public games for a
+Chess.com or Lichess username. That request goes directly from the device to
+the selected public service. Locally imported PGNs and local engine analysis
+remain on the device.
+
+Alpha uses the GPL-3.0-licensed Stockfish.js 19 Lite single-threaded engine.
+It is independent software and is not affiliated with Chess.com, Lichess,
+FIDE, or the Stockfish project.

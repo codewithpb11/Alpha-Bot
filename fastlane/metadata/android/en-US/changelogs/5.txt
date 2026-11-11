@@ -1,0 +1,6 @@
+First F-Droid-ready Alpha release.
+
+* Local Stockfish 19 chess analysis at a target depth of 20.
+* Full-game review and whole-library coaching tools.
+* Public Chess.com and Lichess game imports without account credentials.
+* Privacy policy, complete source, and licence notices included.

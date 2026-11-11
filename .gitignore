@@ -5,3 +5,9 @@ engine/
 __pycache__/
 *.pyc
 engine_config.json
+*.jks
+*.keystore
+android/.idea/
+android/app/release/
+android/.fdroid-gradle-cache/
+release-assets/
