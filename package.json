@@ -1,7 +1,7 @@
 {
   "name": "alpha-chess-analysis",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "A local-first chess database and UCI engine chat app.",
   "license": "GPL-3.0-only",
   "scripts": {
